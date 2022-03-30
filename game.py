@@ -9,7 +9,8 @@ class Board(object):
             self.moves = list(range(9))
         else:
             self.board = np.asarray(board).reshape(3, 3)
-            self.moves = np.where(self.board.flatten() == ' ')
+            self.moves = np.where(self.board.flatten() == ' ')[0]
+            print(self.board, self.result())
     
     def get_moves(self):
         return self.moves
@@ -29,22 +30,22 @@ class Board(object):
         # Check horizontals
         for row in self.board:
             elems = set(row)
-            if(len(elems) == 1 and elems != {' '}):
+            if(len(elems) == 1 and not elems.issubset({' ', '-'})):
                 return elems.pop()
 
         # Check verticals
         for row in self.board.T:
             elems = set(row)
-            if(len(elems) == 1 and elems != {' '}):
+            if(len(elems) == 1 and not elems.issubset({' ', '-'})):
                 return elems.pop()
 
         # Check diagonals
         diag = set([self.board[i, i] for i in range(3)])
-        if(len(diag) == 1 and diag != {' '}):
+        if(len(diag) == 1 and not diag.issubset({' ', '-'})):
             return elems.pop()
         
         diag = set([self.board[i, 2 - i] for i in range(3)])
-        if(len(diag) == 1 and diag != {' '}):
+        if(len(diag) == 1 and not diag.issubset({' ', '-'})):
             return elems.pop()
 
         # Check if no more valid moves
@@ -65,7 +66,7 @@ class UTT(object):
             moveable_boards = [i for i, board in enumerate(self.full_board) if board.result() == ' ']
             return moveable_boards, [self.full_board[i].get_moves() for i in moveable_boards]
         else: # Returns the board number and the moves for just that board
-            return [self.move_board], self.full_board[self.move_board].get_moves()
+            return [self.move_board], [self.full_board[self.move_board].get_moves()]
 
     def move(self, board, move):
         if(self.move_board != board and self.move_board != -1):
@@ -84,8 +85,7 @@ class UTT(object):
         for i, game in enumerate(self.full_board):
             temp_board[int(i / 3), i % 3] = game.result()
         temp_board = Board(temp_board)
-        if len(self.move_list()[0]) == 0:
-            return '-'
+        
         return temp_board.result()
 
     def print_board(self):
@@ -108,15 +108,17 @@ class UTT(object):
 game = UTT()
 while game.result() == ' ':
     boards, moves = game.move_list()
-    print(boards, moves)
-    game.print_board()
-    # board, move = input('Enter a move (board) (move): ').split(' ')
-    # game.move(int(board), int(move))
-    if isinstance(moves[0], list):
-        rand_board = random.randint(0, len(boards) - 1)
-        rand_move = random.choice(moves[rand_board])
-        game.move(boards[rand_board], rand_move)
-    else:
-        game.move(random.choice(boards), random.choice(moves))
+    # print(boards, moves)
+    # game.print_board()
+    """
+    board, move = input('Enter a move (board) (move): ').split(' ')
+    game.move(int(board), int(move))
+    """
+    
+    rand_board = random.randint(0, len(boards) - 1)
+    rand_move = random.choice(moves[rand_board])
+    game.move(boards[rand_board], rand_move)
+    
+
 game.print_board()
 print(game.result())
