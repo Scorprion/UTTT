@@ -2,7 +2,10 @@ from copy import deepcopy
 import random
 import torch
 from torch import nn
+from torch import optim
 import torch.nn.functional as F
+import numpy as np
+import datetime
 import math
 
 from game import UTTT
@@ -27,7 +30,6 @@ class Node(object):
         # Check if terminal node
         outcome = game.result()
         if outcome != ' ':
-            game.print_board()
             if outcome == '-':
                 self.value_update(0)
                 return 0
@@ -46,7 +48,7 @@ class Node(object):
             num_boards, all_moves = game.move_list()
             x = torch.unsqueeze(torch.from_numpy(game.board_features()), 0).double()
             v, policy = neural_net(x)
-            policy = torch.reshape(policy, (9, 9))
+            policy = torch.reshape(policy, (9, 9))  # NOTE: Might cause some issues. If problems arise, double check this behavior
             # total = torch.sum(torch.gather(policy, 0, torch.tensor(all_moves)))
 
             total = 0
@@ -58,20 +60,32 @@ class Node(object):
                 for move in board_moves:
                     self.children.append(Node(policy[board][move] / total, [board, move], not game.turn))
 
-            self.value_update(v)
-            return -v
+            self.value_update(v.detach())
+            return -v.detach()
     
     def value_update(self, new_value):
         self.total_reward += new_value
         self.visits += 1
-    
+
+
+class MCTSHistory(object):
+    def __init__(self):
+        self.history = []
+
+    def add_position(self, features, policy, value):
+        self.history.append([features, policy, value])
+
+    def get_batch(self, batch_size=32):
+        shuffled = random.sample(self.history, len(self.history))
+        for idx in range(0, len(shuffled), batch_size):
+            yield shuffled[idx:idx+batch_size]
 
 
 class MCTS(object):
     def __init__(self, cpuct):
         self.cpuct = cpuct
     
-    def search(self, neural_net, game_state, n_sims):
+    def search(self, n_sims, neural_net, game_state):
         root = Node(0, None, game_state.turn)
         for _ in range(n_sims):
             current_node = root
@@ -100,17 +114,22 @@ class MCTS(object):
                 node.value_update(value)
                 value *= -1
 
+        policy = np.zeros((9, 9))
+        for child in root.children:
+            policy[child.move[0], child.move[1]] = child.visits
+
         chosen_node = random.choices(root.children, weights=[node.visits for node in root.children])[0]
-        return [*chosen_node.move]
+        return [*chosen_node.move], policy
+
 
 class NeuralNet(nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv1 = nn.Conv2d(3, 27, 3)
+        self.conv1 = nn.Conv2d(3, 5, 3)
         self.pool1 = nn.MaxPool2d(3, 2)
-        self.conv2 = nn.Conv2d(27, 3, 1)
+        self.conv2 = nn.Conv2d(5, 5, 1)
         self.pool2 = nn.MaxPool2d(2, 1)
-        self.dense1 = nn.Linear(12, 50)
+        self.dense1 = nn.Linear(20, 50)
         self.dense2 = nn.Linear(50, 81)
         self.dense3 = nn.Linear(50, 1)
 
@@ -125,14 +144,43 @@ class NeuralNet(nn.Module):
         return value, policy
 
 
-tree = MCTS(4)
+def gen_episodes(game, neural_net, n_eps=100):
+    tree = MCTS(4)
+    data_tracker = MCTSHistory()
+    
+    for _ in range(n_eps):
+        prev_info = []
+        game_copy = game.copy()
+        while game_copy.result() == ' ':
+            [num_board, move], policy = tree.search(N_SIMS, neural_net, game_copy)
+            prev_info.append([game_copy.board_features(), policy])
+            game_copy.move(num_board, move)
+            game_copy.print_board()
+
+        for v, info in enumerate(prev_info[::-1]):
+            data_tracker.add_position(info[0], info[1], 1 if v % 2 == 0 else -1)
+        game_copy.print_board()
+        print(game_copy.result())
+    return data_tracker
+
+
+N_SIMS = 250
 brain = NeuralNet()
 brain.double()
 board = UTTT()
-while board.result() == ' ':
-    num_board, move = tree.search(brain, board, 300)
-    board.move(num_board, move)
-    board.print_board()
+optimizer = optim.SGD(brain.parameters(), lr=1e-3, momentum=0.9)
+v_loss, p_loss = nn.MSELoss(), nn.CrossEntropyLoss()
 
-board.print_board()
-print(board.result())
+for _ in range(10):
+    optimizer.zero_grad()
+    data = gen_episodes(board, brain, 5)
+    for batch in data.get_batch():
+        X = torch.from_numpy(np.array([b[0] for b in batch]).reshape(-1, 3, 9, 9)).double()
+        pred_v, pred_p = brain(X)
+        real_p = torch.from_numpy(np.array([b[1] for b in batch]).reshape(-1, 81)).double()
+        real_v = torch.tensor([b[2] for b in batch]).double()
+        loss = v_loss(pred_v, real_v.view(-1, 1)) + p_loss(pred_p, real_p)
+        print(loss)
+        loss.backward()
+        optimizer.step()
+    torch.save(brain.state_dict(), r'C:\Users\dylan\Desktop\Code\Python\Ultimate-Tic-Tac-Toe\Models\{}.pt'.format(datetime.datetime.now().strftime('%Y%m%d%H%M%S')))
