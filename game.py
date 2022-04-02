@@ -1,4 +1,5 @@
 from multiprocessing.sharedctypes import Value
+from copy import deepcopy
 import numpy as np
 import random
 
@@ -10,7 +11,7 @@ class Board(object):
         else:
             self.board = np.asarray(board).reshape(3, 3)
             self.moves = np.where(self.board.flatten() == ' ')[0]
-            print(self.board, self.result())
+            # print(self.board, self.result())
     
     def get_moves(self):
         return self.moves
@@ -42,11 +43,11 @@ class Board(object):
         # Check diagonals
         diag = set([self.board[i, i] for i in range(3)])
         if(len(diag) == 1 and not diag.issubset({' ', '-'})):
-            return elems.pop()
+            return diag.pop()
         
         diag = set([self.board[i, 2 - i] for i in range(3)])
         if(len(diag) == 1 and not diag.issubset({' ', '-'})):
-            return elems.pop()
+            return diag.pop()
 
         # Check if no more valid moves
         if(len(self.moves) == 0):
@@ -104,6 +105,21 @@ class UTT(object):
                 first_row = ''
                 second_row = ''
                 third_row = ''
+    
+    def copy(self):
+        return deepcopy(self)
+
+    def board_features(self):
+        # 1 board for each player, switched based on turn
+        x_player = np.zeros((9, 3, 3))
+        o_player = np.zeros((9, 3, 3))
+
+        for board_num, square in enumerate(self.full_board):
+            x_player[board_num][np.where(square.board == 'X')] = 1
+            o_player[board_num][np.where(square.board == 'O')] = 1
+        self.print_board()
+        features = np.stack((x_player.reshape(9, 9), o_player.reshape(9, 9))) if self.turn else np.stack((o_player.reshape(9, 9), x_player.reshape(9, 9)))
+        return features
 
 game = UTT()
 while game.result() == ' ':
@@ -118,7 +134,7 @@ while game.result() == ' ':
     rand_board = random.randint(0, len(boards) - 1)
     rand_move = random.choice(moves[rand_board])
     game.move(boards[rand_board], rand_move)
-    
+    game.board_features()
 
 game.print_board()
 print(game.result())
