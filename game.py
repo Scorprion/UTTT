@@ -56,7 +56,7 @@ class Board(object):
         return ' '
 
 
-class UTT(object):
+class UTTT(object):
     def __init__(self):
         self.turn = True  # X and O with X going first
         self.move_board = -1  # Board currently to be moved on - [0-8] for a specific board, otherwise -1 for any board
@@ -110,31 +110,49 @@ class UTT(object):
         return deepcopy(self)
 
     def board_features(self):
-        # 1 board for each player, switched based on turn
-        x_player = np.zeros((9, 3, 3))
-        o_player = np.zeros((9, 3, 3))
-
+        # 1 board for each player, switched based on turn, and another layer filled with an integer corresponding to whose turn it is
+        x_features = []
+        x_row = []
+        o_features = []
+        o_row = []
         for board_num, square in enumerate(self.full_board):
-            x_player[board_num][np.where(square.board == 'X')] = 1
-            o_player[board_num][np.where(square.board == 'O')] = 1
-        self.print_board()
-        features = np.stack((x_player.reshape(9, 9), o_player.reshape(9, 9))) if self.turn else np.stack((o_player.reshape(9, 9), x_player.reshape(9, 9)))
-        return features
+            x_board = np.zeros((3, 3))
+            x_board[np.where(square.board == 'X')] = 1
+            x_row.append(x_board)
+            
+            o_board = np.zeros((3, 3))
+            o_board[np.where(square.board == 'O')] = 1
+            o_row.append(o_board)
 
-game = UTT()
+            if (board_num + 1) % 3 == 0:
+                x_features.append(np.hstack((np.asarray(x_row))))
+                o_features.append(np.hstack((np.asarray(o_row))))
+                x_row = []
+                o_row = []
+        x_features = np.vstack(np.asarray(x_features))
+        o_features = np.vstack(np.asarray(o_features))
+        
+        features = np.stack((x_features, o_features)) if self.turn else np.stack((o_features, x_features))
+        return np.vstack((features, np.full_like(features[0], int(self.turn)).reshape(-1, 9, 9)))
+
+"""
+game = UTTT()
 while game.result() == ' ':
     boards, moves = game.move_list()
     # print(boards, moves)
     # game.print_board()
-    """
+    
     board, move = input('Enter a move (board) (move): ').split(' ')
     game.move(int(board), int(move))
-    """
+    
     
     rand_board = random.randint(0, len(boards) - 1)
     rand_move = random.choice(moves[rand_board])
     game.move(boards[rand_board], rand_move)
-    game.board_features()
+    game.print_board()
+    print(game.board_features())
 
 game.print_board()
 print(game.result())
+"""
+
