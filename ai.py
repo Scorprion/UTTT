@@ -35,7 +35,7 @@ class Node(object):
             if outcome == '-':
                 return 0
             else:
-                return 1
+                return -1
 
         if not self.is_expanded():  # Extra layer of protection
             num_boards, all_moves = game.move_list()
@@ -86,6 +86,11 @@ class MCTSHistory(object):
         shuffled = random.sample(self.history, len(self.history))
         for idx in range(0, len(shuffled), batch_size):
             yield shuffled[idx:idx+batch_size]
+        
+    def merge(self, others):
+        for other in others:
+            self.history.extend(other)
+        return self
 
 
 class MCTS(object):
@@ -139,8 +144,8 @@ class NeuralNet(nn.Module):
         x = F.relu(self.conv3(x))
         x = torch.flatten(x, 1)  # Flatten after the first dim wihle preserving the batch number
         
-        x = F.dropout(F.relu(self.dense1(x)), p=0.2, training=self.training)
-        x = F.dropout(F.relu(self.dense2(x)), p=0.2, training=self.training)
+        x = self.drop(F.relu(self.dense1(x)))
+        x = self.drop(F.relu(self.dense2(x)))
 
 
         policy = F.log_softmax(self.dense3(x), 1)
@@ -165,11 +170,11 @@ class Player(object):
         if path is not None:
             self.brain.load_state_dict(torch.load(path))
         self.n_sims = n_sims
-        self.optimizer = optim.Adam(self.brain.parameters())
+        self.optimizer = optim.SGD(self.brain.parameters(), lr=1e-3, momentum=0.9, nesterov=True)
         self.v_loss = nn.MSELoss()
         self.p_loss = lambda pred, real: -torch.sum(pred * real) / real.shape[0]
     
-    def get_move(self, board, c_puct, training=True):
+    def get_move(self, board, c_puct=1, training=True):
         tree = MCTS(c_puct)
         [num_board, move], policy = tree.search(self.n_sims, self.brain, board, training)
         return num_board, move, policy
@@ -208,7 +213,7 @@ class Player(object):
         return deepcopy(self)
 
 
-def gen_episodes(player, game, tracker=None, c_puct=1, n_eps=25):
+def gen_episodes(player, game, c_puct, tracker=None, n_eps=25):
     data_tracker = MCTSHistory() if tracker is None else tracker
     
     for _ in tqdm(range(n_eps), desc='Generating Self-Play'):
@@ -218,7 +223,6 @@ def gen_episodes(player, game, tracker=None, c_puct=1, n_eps=25):
             num_board, move, policy = player.get_move(game_copy, c_puct)
             prev_info.append([game_copy.board_features(), policy])
             game_copy.move(num_board, move)
-
         if game_copy.result() == '-':
             for info in prev_info[::-1]:
                 data_tracker.add_position(info[0], info[1], 0)
