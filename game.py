@@ -57,10 +57,11 @@ class Board(object):
 
 
 class UTTT(object):
-    def __init__(self):
+    def __init__(self, history=6):
         self.turn = True  # X and O with X going first
         self.move_board = -1  # Board currently to be moved on - [0-8] for a specific board, otherwise -1 for any board
         self.full_board = [Board() for i in range(9)]
+        self.features = []
 
     def move_list(self): 
         if(self.move_board == -1): # Returns the board number and the moves for each board
@@ -111,48 +112,16 @@ class UTTT(object):
 
     def board_features(self):
         # 1 board for each player, switched based on turn, and another layer filled with an integer corresponding to whose turn it is
-        x_features = []
-        x_row = []
-        o_features = []
-        o_row = []
+        row_boards = []
+        total_boards = []
         for board_num, square in enumerate(self.full_board):
-            x_board = np.zeros((3, 3))
-            x_board[np.where(square.board == 'X')] = 1
-            x_row.append(x_board)
+            sub_board = np.zeros((3, 3))
+            sub_board[np.where(square.board == 'X')] = 1
+            sub_board[np.where(square.board == 'O')] = -1
+            row_boards.append(sub_board)
             
-            o_board = np.zeros((3, 3))
-            o_board[np.where(square.board == 'O')] = 1
-            o_row.append(o_board)
-
             if (board_num + 1) % 3 == 0:
-                x_features.append(np.hstack((np.asarray(x_row))))
-                o_features.append(np.hstack((np.asarray(o_row))))
-                x_row = []
-                o_row = []
-        x_features = np.vstack(np.asarray(x_features))
-        o_features = np.vstack(np.asarray(o_features))
-        
-        features = np.stack((x_features, o_features)) if self.turn else np.stack((o_features, x_features))
-        return np.vstack((features, np.full_like(features[0], int(self.turn)).reshape(-1, 9, 9)))
-
-"""
-game = UTTT()
-while game.result() == ' ':
-    boards, moves = game.move_list()
-    # print(boards, moves)
-    # game.print_board()
-    
-    board, move = input('Enter a move (board) (move): ').split(' ')
-    game.move(int(board), int(move))
-    
-    
-    rand_board = random.randint(0, len(boards) - 1)
-    rand_move = random.choice(moves[rand_board])
-    game.move(boards[rand_board], rand_move)
-    game.print_board()
-    print(game.board_features())
-
-game.print_board()
-print(game.result())
-"""
-
+                total_boards.append(np.hstack((np.asarray(row_boards))))
+                row_boards = []
+        total_boards = np.vstack(np.asarray(total_boards))
+        return total_boards if self.turn else -total_boards
